@@ -28,16 +28,43 @@ const getRandomObjectFromArray = function(arrayOfObjects) {
 let clients = [];
 
 var clientCount = 0;
+
 io.on('connection', function(client) {
-  console.log('Client connected...');
+
   client.on('join', function(data) {
-    console.log(data.name+ 'has joined');
+    console.log(data.name + 'has joined');
     clientCount++;
-    clients.push({ id: clientCount, index: clientCount, name : data.name});
+    clients.push({id: clientCount, index: clientCount, name: data.name});
     console.log('totalClients', clientCount);
     console.log(clients);
-  });
+    // let numberOfClientsInroom = 2;
+    // //roomNo = Math.round((clientCount / nxxumberOfClientsInroom));
+    //
+    // // const room = _creatingRoom(io,clientCount);
+    if(clientCount < 3){
+      roomNo = 'room-1';
+      client.join(roomNo);
+    } else {
+      roomNo = 'room-2';
+      client.join(roomNo);
+    }
 
+    client.emit('roomNumber', roomNo);
+
+
+
+    // console.log('room', room);
+
+    // if(numberOfClientsInroom >= clientCount){
+    //   client.join('room-'+roomNo);
+    //   console.log('you are connected to room number', roomNo);
+    // } else {
+    //   roomNo++;
+    //   client.join('room-'+roomNo);
+    //   console.log('you are connected to room number', roomNo);
+    // }
+    // client.emit('roomNumber', roomNo);
+  })
 
 
 
@@ -63,9 +90,27 @@ io.on('connection', function(client) {
     }
     return cards;
   }
-  
-  
-  client.on('claim', function (data) {
+
+
+  const _creatingRoom = (io, id, namespace)=> {
+    var res = [],
+      ns = io.of(namespace || "/");
+    if (ns) {
+      for (var id in ns.connected) {
+
+        var index = ns.connected[id].rooms.indexOf(roomId);
+        if (index !== -1) {
+          res.push(ns.connected[id]);
+        }
+        else {
+          res.push(ns.connected[id]);
+        }
+      }
+      return res;
+    }
+  }
+
+  client.on('claim', function (data, roomNumber) {
     let cardFound = false;
     let responseObj = {};
 
@@ -73,14 +118,14 @@ io.on('connection', function(client) {
     let deletedCard;
     let clientDetails = {};
 
-    for(let i=0; i<clients.length; i++){
-      if(clients[i].id == data.to){
+    for (let i = 0; i < clients.length; i++) {
+      if (clients[i].id == data.to) {
         clientDetails.to_name = clients[i].name;
         let cards = clients[i].cards;
-        for(let j=0; j<cards.length; j++){
-          if(cards[j].code == data.cardCode){
+        for (let j = 0; j < cards.length; j++) {
+          if (cards[j].code == data.cardCode) {
             cardFound = true;
-            deletedCard =  cards[j];
+            deletedCard = cards[j];
             clients[i].cards.splice(j, 1);
             break;
           }
@@ -88,15 +133,15 @@ io.on('connection', function(client) {
       }
     }
 
-    for(let k=0; k<clients.length; k++){
-      if(clients[k].id = data.from){
+    for (let k = 0; k < clients.length; k++) {
+      if (clients[k].id = data.from) {
         clientDetails.from_name = clients[k].name;
         clientDetails.card_name = deletedCard.name + ' ' + deletedCard.suit;
         clients[k].cards.push(deletedCard);
         break;
       }
     }
-    if(cardFound){
+    if (cardFound) {
       responseObj.data = clients;
       responseObj.code = 200;
       responseObj.status = 'card_found';
@@ -107,33 +152,31 @@ io.on('connection', function(client) {
       responseObj.status = 'card_not_found';
       responseObj.turn = data.to;
     }
-    client.emit('clients', responseObj);
-    client.broadcast.emit('clients', responseObj);
+    io.sockets.in(roomNumber).emit('clients', responseObj);
+    client.in(roomNumber).broadcast.emit('clients', responseObj);
 
-    client.emit('msgs', Object.assign(responseObj, clientDetails));
-    client.broadcast.emit('msgs', Object.assign(responseObj, clientDetails));
+    io.sockets.in(roomNumber).emit('msgs', Object.assign(responseObj, clientDetails));
+    // client.in(roomNumber).broadcast.emit('msgs', Object.assign(responseObj, clientDetails));
   })
 
-
-  client.on('startGame', function (clientName) {
+  client.on('startGame', function (clientName, roomNumber) {
     let responseObj = {};
     let deckCards = deck();
     let numberOfClients = clients.length;
-    let bots =  6 - numberOfClients;
+    let bots = 6 - numberOfClients;
     let cardArray = [...deckCards];
-    let loopCount = parseInt(deckCards.length/ 6);
+    let loopCount = parseInt(deckCards.length / 6);
     let randomCard = [];
-    for(let i=0; i<bots; i++){
-      clients.push({name:'bot-'+ (i+1), type: 'bot'});
+    for (let i = 0; i < bots; i++) {
+      clients.push({name: 'bot-' + (i + 1), type: 'bot'});
     }
-     let shuffledArray = _.shuffle(clients.keys());
-
+    let shuffledArray = _.shuffle(clients.keys());
 
     //Teams Seperation
-    for(let i=0;i<shuffledArray; i++){
+    for (let i = 0; i < shuffledArray; i++) {
       let cli = [];
       cli.push(clients[shuffledArray[i]]);
-      if(i = (shuffledArray.length / 2) - 1){
+      if (i = (shuffledArray.length / 2) - 1) {
         players['team1']['clients'] = cli;
         clients[shuffledArray[i]]['team'] = 'team_1'
 
@@ -143,19 +186,19 @@ io.on('connection', function(client) {
       }
     }
 
-   /* let randomTurnIndex =  _.sample(shuffledArray);
-    players['turn']['player'] = clients[randomTurnIndex].id;
-    players['turn']['team'] =  clients[randomTurnIndex].team;*/
+    /* let randomTurnIndex =  _.sample(shuffledArray);
+     players['turn']['player'] = clients[randomTurnIndex].id;
+     players['turn']['team'] =  clients[randomTurnIndex].team;*/
 
     players['turn']['player'] = clients[0].id;
-    players['turn']['team'] =  clients[0].team;
+    players['turn']['team'] = clients[0].team;
 
     //Cards for Clients
-    for(let i=0; i<loopCount; i++) {
+    for (let i = 0; i < loopCount; i++) {
       console.log('cardArray-->', cardArray);
       for (let j = 0; j < clients.length; j++) {
         randomCard = getRandomObjectFromArray(cardArray);
-       let index =  _.findLastIndex(cardArray, {index : randomCard.index});
+        let index = _.findLastIndex(cardArray, {index: randomCard.index});
         cardArray.splice(index, 1);
         if (!_.has(clients[j], 'cards')) {
           clients[j]['cards'] = [];
@@ -168,16 +211,18 @@ io.on('connection', function(client) {
     responseObj.data = clients;
     responseObj.code = 200;
     responseObj.status = 'clients_segregrated';
-    responseObj.turn =  players['turn'];
-    client.emit('clients', responseObj);
-    client.broadcast.emit('clients', responseObj);
-    console.log('cardArray',  JSON.stringify(cardArray));
+    responseObj.turn = players['turn'];
+    io.sockets.in(roomNumber).emit('clients', responseObj);
+    //io.sockets.in(roomNo).broadcast.emit('msgs', Object.assign(responseObj, clientDetails));
+    //client.in(roomNumber).broadcast.emit('clients', responseObj);
+    console.log('cardArray', JSON.stringify(cardArray));
   })
 
-  client.on('messages', function(data){
-    client.emit('thread', {personName : data.personName, message : data.message});
-    client.broadcast.emit('thread', {personName : data.personName, message : data.message});
+  client.on('messages', function (data, roomNumber) {
+    io.sockets.in(roomNumber).emit('thread', {personName: data.personName, message: data.message});
+    //client.in(roomNumber).broadcast.emit('thread', {personName: data.personName, message: data.message});
   });
 });
+
 
 server.listen(7777);
